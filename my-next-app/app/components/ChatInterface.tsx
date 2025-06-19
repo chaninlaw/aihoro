@@ -40,44 +40,103 @@ const ChatInterface: React.FC = () => {
 
     const apiEndpoint = selectedModel === 'openai' ? '/api/chat/openai' : '/api/chat/gemini';
 
+    // Create a placeholder for the assistant's message BEFORE the fetch call.
+    // This placeholder will be updated incrementally with streamed content.
+    const assistantMessagePlaceholder: Message = {
+      role: 'assistant',
+      content: '', // Start with empty content
+      isError: false,
+    };
+    setMessages(prevMessages => [...prevMessages, assistantMessagePlaceholder]);
+
     try {
       const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ messages: currentMessages }),
+        body: JSON.stringify({ messages: currentMessages }), // Send the history up to the new user message
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error(`${selectedModel} API Error:`, errorData.error || response.statusText);
-        const assistantErrorMessage: Message = {
-          role: 'assistant',
-          content: `Error from ${selectedModel}: ${errorData.error || response.statusText}`,
-          isError: true, // Mark as error
-        };
-        setMessages(prevMessages => [...prevMessages, assistantErrorMessage]);
-        setIsLoading(false); // Already set in finally, but good for clarity
-        return;
+        let errorContent = `Error from ${selectedModel}: ${response.statusText}`;
+        try {
+          // Try to parse the error response as JSON, which our backend sends for pre-stream errors
+          const errorData = await response.json();
+          errorContent = `Error from ${selectedModel}: ${errorData.error || response.statusText}`;
+        } catch (e) {
+          // If JSON parsing fails, try to get plain text
+          try {
+            errorContent = `Error from ${selectedModel}: ${await response.text()}`;
+          } catch (e2) { /* Fallback to status text already set */ }
+        }
+        // Update the placeholder with the error
+        setMessages(prevMessages => prevMessages.map(msg =>
+          msg === assistantMessagePlaceholder ? { ...msg, content: errorContent, isError: true } : msg
+        ));
+        return; // Exit early
       }
 
-      const data = await response.json();
-      const assistantMessage: Message = data.response; // API should return { role, content }
-      setMessages(prevMessages => [...prevMessages, assistantMessage]);
+      if (!response.body) {
+        throw new Error("Response body is null, streaming not possible.");
+      }
 
-    } catch (error)
-    {
-      console.error(`Fetch Error (${selectedModel}):`, error);
-      const assistantErrorMessage: Message = {
-        role: 'assistant',
-        content: `Error: Could not connect to the ${selectedModel} server. Please ensure it's running and reachable.`,
-        isError: true, // Mark as error
-      };
-      setMessages(prevMessages => [...prevMessages, assistantErrorMessage]);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedContent = "";
+      let firstChunk = true;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        accumulatedContent += decoder.decode(value, { stream: true });
+
+        // Attempt to parse if it's a JSON error message (from backend's in-stream error reporting)
+        // This is more likely to happen in the first few chunks if the backend sends a quick error.
+        if (firstChunk || accumulatedContent.trim().startsWith("{")) {
+           try {
+            const potentialError = JSON.parse(accumulatedContent);
+            if (potentialError && potentialError.error) {
+              setMessages(prevMessages => prevMessages.map(msg =>
+                msg === assistantMessagePlaceholder ? { ...msg, content: `Error from ${selectedModel}: ${potentialError.error}`, isError: true } : msg
+              ));
+              return; // Stop further processing of this stream
+            }
+          } catch (e) {
+            // Not a JSON error, or incomplete JSON. Continue accumulating.
+            // If it was a false positive (not an error), the content will just be displayed.
+          }
+        }
+        firstChunk = false;
+
+        // Update the assistant's message content incrementally
+        setMessages(prevMessages => prevMessages.map(msg =>
+          msg === assistantMessagePlaceholder ? { ...msg, content: accumulatedContent, isError: false } : msg
+        ));
+      }
+
+      // Final decode call to flush any remaining characters
+      const finalDecodedContent = decoder.decode(undefined, { stream: false });
+      if (finalDecodedContent) {
+          accumulatedContent += finalDecodedContent;
+           setMessages(prevMessages => prevMessages.map(msg =>
+            msg === assistantMessagePlaceholder ? { ...msg, content: accumulatedContent, isError: false } : msg
+          ));
+      }
+
+
+    } catch (error: any) {
+      console.error(`Fetch/Stream Error (${selectedModel}):`, error);
+      // Update the placeholder with the fetch/network error
+      setMessages(prevMessages => prevMessages.map(msg =>
+        msg === assistantMessagePlaceholder ? { ...msg, content: `Network or streaming error with ${selectedModel}: ${error.message || 'Unknown error'}.`, isError: true } : msg
+      ));
     } finally {
       setIsLoading(false);
-      console.log("Fetching complete.");
+      console.log(`Fetching/Streaming from ${selectedModel} complete.`);
     }
   };
 

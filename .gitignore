@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Production build
+build/
+
+# Misc
+.DS_Store
+*.pem
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+# Comment out if you want to commit package-lock.json, but it often causes merge conflicts
+# especially in team environments or when dependencies change frequently.
+
+# Environment variables
+.env
+.env*.local
+!/.env.example # if you have an example env file to commit
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
