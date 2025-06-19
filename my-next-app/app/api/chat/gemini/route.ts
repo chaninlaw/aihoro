@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, ChatSession, Content, StreamGenerateContentResult } from '@google/generative-ai';
+import { GoogleGenerativeAI, ChatSession, Content } from '@google/generative-ai'; // Removed HarmCategory, HarmBlockThreshold
 
 // Helper function to transform messages to Gemini format (remains the same)
 function transformMessagesForGemini(messages: { role: string; content: string }[]): { history: Content[], lastUserMessage: string } {
@@ -59,13 +57,13 @@ export async function POST(req: NextRequest) {
     });
 
     // Use sendMessageStream for streaming
-    const streamResult: AsyncIterable<StreamGenerateContentResult> = await chat.sendMessageStream(lastUserMessage);
+    const streamResult = await chat.sendMessageStream(lastUserMessage);
 
     const readableStream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
         try {
-          for await (const chunk of streamResult) {
+          for await (const chunk of streamResult.stream) {
             // Check for promptFeedback, which might indicate an issue before any text is generated
             if (chunk.promptFeedback && chunk.promptFeedback.blockReason) {
                 console.error(`Gemini stream blocked: ${chunk.promptFeedback.blockReason}`, chunk.promptFeedback);
@@ -75,13 +73,11 @@ export async function POST(req: NextRequest) {
                 return; // Stop further processing
             }
 
-            if (chunk.response && typeof chunk.response.text === 'function') {
-              const content = chunk.response.text();
-              // Gemini stream might send empty strings or just whitespace,
-              // filter them out if they are not meaningful.
-              if (content && content.trim()) {
-                controller.enqueue(encoder.encode(content));
-              }
+            const content = chunk.text();
+            // Gemini stream might send empty strings or just whitespace,
+            // filter them out if they are not meaningful.
+            if (content && content.trim()) {
+              controller.enqueue(encoder.encode(content));
             }
           }
         } catch (error: any) {
