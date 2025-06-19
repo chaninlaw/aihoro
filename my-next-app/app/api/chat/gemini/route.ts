@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, ChatSession, Content, StreamGenerateContentResult } from '@google/generative-ai';
+import { GoogleGenerativeAI, ChatSession, Content, StreamGenerateContentResult } from '@google/generative-ai'; // Removed HarmCategory, HarmBlockThreshold
 
 // Helper function to transform messages to Gemini format (remains the same)
 function transformMessagesForGemini(messages: { role: string; content: string }[]): { history: Content[], lastUserMessage: string } {
