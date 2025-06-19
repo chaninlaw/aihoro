@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     });
 
     const stream = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "gpt-4.1-nano",
       messages: messages,
       stream: true,
     });

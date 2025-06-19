@@ -61,7 +61,9 @@ const ChatInterface: React.FC = () => {
       content: '', // Start with empty content
       isError: false,
     };
+    // Use index for reliable updates
     setMessages(prevMessages => [...prevMessages, assistantMessagePlaceholder]);
+    const assistantIndex = messages.length + 1; // +1 because setMessages is async, so we add after user message
 
     try {
       const response = await fetch(apiEndpoint, {
@@ -85,8 +87,8 @@ const ChatInterface: React.FC = () => {
           } catch (e2) { /* Fallback to status text already set */ }
         }
         // Update the placeholder with the error
-        setMessages(prevMessages => prevMessages.map(msg =>
-          msg === assistantMessagePlaceholder ? { ...msg, content: errorContent, isError: true } : msg
+        setMessages(prevMessages => prevMessages.map((msg, idx) =>
+          idx === assistantIndex ? { ...msg, content: errorContent, isError: true } : msg
         ));
         return; // Exit early
       }
@@ -108,45 +110,42 @@ const ChatInterface: React.FC = () => {
 
         accumulatedContent += decoder.decode(value, { stream: true });
 
-        // Attempt to parse if it's a JSON error message (from backend's in-stream error reporting)
-        // This is more likely to happen in the first few chunks if the backend sends a quick error.
         if (firstChunk || accumulatedContent.trim().startsWith("{")) {
-           try {
+          try {
             const potentialError = JSON.parse(accumulatedContent);
             if (potentialError && potentialError.error) {
-              setMessages(prevMessages => prevMessages.map(msg =>
-                msg === assistantMessagePlaceholder ? { ...msg, content: `Error from ${selectedModel}: ${potentialError.error}`, isError: true } : msg
+              setMessages(prevMessages => prevMessages.map((msg, idx) =>
+                idx === assistantIndex ? { ...msg, content: `Error from ${selectedModel}: ${potentialError.error}`, isError: true } : msg
               ));
               return; // Stop further processing of this stream
             }
           } catch (e) {
             // Not a JSON error, or incomplete JSON. Continue accumulating.
-            // If it was a false positive (not an error), the content will just be displayed.
           }
         }
         firstChunk = false;
 
-        // Update the assistant's message content incrementally
-        setMessages(prevMessages => prevMessages.map(msg =>
-          msg === assistantMessagePlaceholder ? { ...msg, content: accumulatedContent, isError: false } : msg
+        // Update the assistant's message content incrementally using index
+        setMessages(prevMessages => prevMessages.map((msg, idx) =>
+          idx === assistantIndex ? { ...msg, content: accumulatedContent, isError: false } : msg
         ));
       }
 
       // Final decode call to flush any remaining characters
       const finalDecodedContent = decoder.decode(undefined, { stream: false });
       if (finalDecodedContent) {
-          accumulatedContent += finalDecodedContent;
-           setMessages(prevMessages => prevMessages.map(msg =>
-            msg === assistantMessagePlaceholder ? { ...msg, content: accumulatedContent, isError: false } : msg
-          ));
+        accumulatedContent += finalDecodedContent;
+        setMessages(prevMessages => prevMessages.map((msg, idx) =>
+          idx === assistantIndex ? { ...msg, content: accumulatedContent, isError: false } : msg
+        ));
       }
 
 
     } catch (error: any) {
       console.error(`Fetch/Stream Error (${selectedModel}):`, error);
       // Update the placeholder with the fetch/network error
-      setMessages(prevMessages => prevMessages.map(msg =>
-        msg === assistantMessagePlaceholder ? { ...msg, content: `Network or streaming error with ${selectedModel}: ${error.message || 'Unknown error'}.`, isError: true } : msg
+      setMessages(prevMessages => prevMessages.map((msg, idx) =>
+        idx === assistantIndex ? { ...msg, content: `Network or streaming error with ${selectedModel}: ${error.message || 'Unknown error'}.`, isError: true } : msg
       ));
     } finally {
       setIsLoading(false);
@@ -204,9 +203,9 @@ const ChatInterface: React.FC = () => {
             return (
               <Card
                 key={index}
-                className={`max-w-[80%] sm:max-w-[75%] md:max-w-[70%] lg:max-w-[65%] rounded-xl shadow-sm clear-both ${
+                className={`max-w-[80%] sm:max-w-[75%] md:max-w-[70%] lg:max-w-[65%] min-w-1/3 rounded-xl shadow-sm clear-both ${
                   msg.role === 'user'
-                    ? 'bg-blue-600 text-primary-foreground float-right ml-auto' // Using primary-foreground for white text on blue
+                    ? 'bg-blue-600 text-primary-foreground float-right ml-auto text-right' // Using primary-foreground for white text on blue
                     : 'bg-slate-200 text-slate-900 float-left mr-auto' // Adjusted assistant message background
                 }`}
               >
@@ -244,7 +243,7 @@ const ChatInterface: React.FC = () => {
           type="text"
           value={inputValue}
           onChange={handleInputChange}
-          onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSendMessage()}
+          onKeyDown={(e) => e.key === 'Enter' && !isLoading && handleSendMessage()}
           className={`flex-grow p-2.5 text-sm sm:text-base border-none bg-slate-50 rounded-l-md focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0
                      ${selectedModel === 'openai' ? 'focus-visible:ring-blue-500' : 'focus-visible:ring-green-500'}`} // Adjusted focus style for shadcn Input
           placeholder={`Chat with ${selectedModel.toUpperCase()}...`}
